@@ -53,7 +53,25 @@ jobs:
       - run: docker run --detach -p 5432:5432 cimg/postgres:14.2
       - run: INDEXER_DATABASE_URL="postgresql://postgres@localhost/postgres" cargo nextest --nextest-profile ci --partition hash:1/1 --unit --exclude backup-cli --changed-since "origin/main"
   docker-build-push:
-    executor: ubuntu-medium
+    executor: ubuntu-2xl
+    parameters:
+      addl_tag:
+        description: Additional image tag
+        type: string
+        default: latest
+    steps:
+      - checkout
+      - aws-ecr-setup
+      - run: echo $GITHUB_CONTAINER_REGISTRY_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
+      - run:
+          name: Build and Push
+          shell: /bin/bash
+          command: |
+              set -e
+              docker buildx create --use
+              docker/docker-bake-rust-all.sh
+  docker-build-push-kaniko:
+    executor: ubuntu-2xl
     parameters:
       addl_tag:
         description: Additional image tag
@@ -62,34 +80,30 @@ jobs:
     steps:
       - checkout
       - aws-setup
+      - aws-ecr-setup
       - run: echo "export IMAGE_TAG=dev_$(git rev-parse --short=8 HEAD)" >> $BASH_ENV
       - run: echo "export ADDL_IMAGE_TAG=<<parameters.addl_tag>>_$(git rev-parse --short=8 HEAD)" >> $BASH_ENV
+      - run: echo "export GH_VALIDATOR_IMAGE_NAME=ghcr.io/aptos-labs/aptos-core/validator" >> $BASH_ENV
+      - run: echo "export ECR_VALIDATOR_IMAGE_NAME=323143817725.dkr.ecr.us-west-2.amazonaws.com/aptos/validator" >> $BASH_ENV
+      # - run: echo $GITHUB_CONTAINER_REGISTRY_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
       - run:
           name: Build or skip
           shell: /bin/bash
           command: |
-            # Check if an image is already built at this image tag
-            MANIFEST=$(aws ecr batch-get-image --repository-name aptos/validator --image-ids imageTag=$IMAGE_TAG --query 'images[].imageManifest' --output text)
-            echo $MANIFEST
-            if [ -z "$MANIFEST" ]; then
-              echo "Image tag $IMAGE_TAG not present. Starting build all..."
-              ./docker/build-aws.sh --build-all --version $(git rev-parse --short=8 HEAD) --addl_tags "<<parameters.addl_tag>>,${ADDL_IMAGE_TAG}"
-            else
-              echo "Image tag $IMAGE_TAG already present. Skipping build..."
-              echo "Continue retagging to <<parameters.addl_tag>>"
-              ret=0
-              for img in "${AWS_ECR_IMAGES[@]}"
-              do
-                # Get the image manifest for the already-built image and put it at different image tags
-                MANIFEST=$(aws ecr batch-get-image --repository-name aptos/${img} --image-ids imageTag=$IMAGE_TAG --query 'images[].imageManifest' --output text)
-                put_img_out=$(aws ecr put-image --repository-name aptos/${img} --image-tag "<<parameters.addl_tag>>" --image-manifest "$MANIFEST" 2>&1)
-                put_img_out_addl=$(aws ecr put-image --repository-name aptos/${img} --image-tag "${ADDL_IMAGE_TAG}" --image-manifest "$MANIFEST" 2>&1)
-                ret=$?
-                # ok if image tag exists and cannot overwrite
-                echo $put_img_out $put_img_out_addl | grep 'ImageAlreadyExistsException' && ret=0
-              done
-              exit $ret
-            fi
+              set -e
+              echo Build started on `date`
+              echo Building and Pushing the Docker image...
+              docker version
+              # curl -JLO https://github.com/docker/buildx/releases/download/v0.8.2/buildx-v0.8.2.linux-amd64
+              # mkdir -p ~/.docker/cli-plugins
+              # mv buildx-v0.8.2.linux-amd64 ~/.docker/cli-plugins/docker-buildx
+              # chmod a+rx ~/.docker/cli-plugins/docker-buildx
+              # docker buildx create --use
+              docker run -v /home/circleci/project:/workspace -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY gcr.io/kaniko-project/executor:latest --dockerfile /workspace/docker/rust-all-classic.Dockerfile --destination 323143817725.dkr.ecr.us-west-2.amazonaws.com/aptos/validator:built-with-kaniko --target=validator --context dir:///workspace/ --cache=true
+              # docker build --build-arg=BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" --build-arg=GIT_REV=$(git rev-parse --short=8 HEAD) --build-arg=IMAGE_TARGETS=release -f docker/rust-all-classic.Dockerfile .
+              # GIT_REV=$(git rev-parse --short=8 HEAD) BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" docker buildx bake --progress=plain --push --file docker/docker-bake-rust-all.hcl all
+              # docker buildx build --progress=plain --cache-from type=registry,ref=$GH_VALIDATOR_IMAGE_NAME --cache-to type=registry,ref=$GH_VALIDATOR_IMAGE_NAME,mode=max --build-arg GIT_REV="$(git rev-parse HEAD)" --build-arg BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" --tag "$ECR_VALIDATOR_IMAGE_NAME:dev_$(git rev-parse --short=8  HEAD)" --push --file docker/validator/Dockerfile .
+              echo Build completed on `date`
   ecr-dockerhub-mirror:
     executor: ubuntu-medium
     parameters:
@@ -268,19 +282,21 @@ workflows:
         equal: [main, << pipeline.git.branch >>]
     jobs:
       #      - build-benchmarks
-      - e2e-test
-      - lint
-      - unit-test
+      # - e2e-test
+      # - lint
+      # - unit-test
       - docker-build-push:
           context: aws-dev
-      - ecosystem-test:
-          context: aws-dev
-          requires:
-            - docker-build-push
-      - forge-k8s-test:
-          context: aws-dev
-          requires:
-            - docker-build-push
+      # - docker-build-push-kaniko:
+      #     context: aws-dev
+      # - ecosystem-test:e
+      #     context: aws-dev
+      #     requires:
+      #       - docker-build-push
+      # - forge-k8s-test:
+      #     context: aws-dev
+      #     requires:
+      #       - docker-build-push
   ### on devnet branch update ###
   # Ensure the latest is built on the "devnet" branch, and mirror from ECR to Dockerhub
   devnet-branch-cut:

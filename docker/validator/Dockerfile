@@ -1,3 +1,4 @@
+#syntax=docker/dockerfile:1.4
 FROM debian:buster-20220228@sha256:fd510d85d7e0691ca551fe08e8a2516a86c7f24601a940a299b5fe5cdd22c03a AS debian-base
 
 FROM debian-base AS toolchain
@@ -11,13 +12,12 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --de
 ENV PATH "$PATH:/root/.cargo/bin"
 
 WORKDIR /aptos
-COPY rust-toolchain /aptos/rust-toolchain
+COPY --link rust-toolchain /aptos/rust-toolchain
 RUN rustup install $(cat rust-toolchain)
 
 FROM toolchain AS builder
 
-ARG ENABLE_FAILPOINTS
-COPY . /aptos
+COPY --link . /aptos
 
 RUN IMAGE_TARGETS="release" ./docker/build-common.sh
 
@@ -29,12 +29,12 @@ RUN apt-get update && apt-get install -y libssl1.1 && apt-get clean && rm -r /va
 RUN addgroup --system --gid 6180 aptos && adduser --system --ingroup aptos --no-create-home --uid 6180 aptos
 
 RUN mkdir -p /opt/aptos/bin /opt/aptos/etc
-# TODO(geekflyer): Probable dead code - consider removing the 2 lines as install-tools.sh is not executed and therefore probably obsolete.
-COPY docker/validator/install-tools.sh /root
-COPY --from=builder /aptos/target/release/aptos-node /opt/aptos/bin
-COPY --from=builder /aptos/target/release/db-backup /opt/aptos/bin
-COPY --from=builder /aptos/target/release/db-bootstrapper /opt/aptos/bin
-COPY --from=builder /aptos/target/release/db-restore /opt/aptos/bin
+# # TODO(geekflyer): Probable dead code - consider removing the 2 lines as install-tools.sh is not executed and therefore probably obsolete.
+# COPY docker/validator/install-tools.sh /root
+COPY --link --from=builder /aptos/target/release/aptos-node /opt/aptos/bin
+COPY --link --from=builder /aptos/target/release/db-backup /opt/aptos/bin
+COPY --link --from=builder /aptos/target/release/db-bootstrapper /opt/aptos/bin
+COPY --link --from=builder /aptos/target/release/db-restore /opt/aptos/bin
 
 # Admission control
 EXPOSE 8000

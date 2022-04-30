@@ -21,7 +21,8 @@ COPY . /aptos
 
 RUN IMAGE_TARGETS="release" ./docker/build-common.sh
 
-### Production Image ###
+### Init / Genesis Image ###
+
 FROM debian-base AS pre-prod
 
 RUN apt-get update && apt-get -y install libssl1.1 wget busybox gettext-base && apt-get clean && rm -r /var/lib/apt/lists/*
@@ -38,13 +39,6 @@ RUN mkdir -p /aptos-framework/move/modules
 COPY --from=builder /aptos/aptos-framework/releases/artifacts/current/build /aptos-framework/move/build
 RUN mv /aptos-framework/move/build/**/bytecode_modules/*.mv /aptos-framework/move/modules
 RUN rm -rf /aptos-framework/move/build
-
-FROM pre-prod as testing
-
-RUN /usr/local/bin/aptos-genesis-tool -h
-RUN /usr/local/bin/aptos-operational-tool -h
-
-FROM pre-prod as prod
 
 ARG BUILD_DATE
 ARG GIT_REV
