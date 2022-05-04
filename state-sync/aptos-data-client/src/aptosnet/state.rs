@@ -178,7 +178,7 @@ impl PeerStates {
     pub fn mark_peer_as_polled(&mut self, peer: &PeerNetworkId) {
         let _ = self.polled_peers.insert(*peer);
 
-        if is_priority_peer(peer) {
+        if self.is_priority_peer(peer) {
             self.prioritized_peer_queue.push_front(*peer);
         } else {
             self.regular_peer_queue.push_front(*peer);
@@ -188,6 +188,13 @@ impl PeerStates {
     /// Returns true iff the given peer has already been polled
     pub fn already_polled_peer(&self, peer: &PeerNetworkId) -> bool {
         self.polled_peers.contains(peer)
+    }
+
+    /// Returns true iff the given peer is high-priority.
+    ///
+    /// TODO(joshlind): make this less hacky using network topological awareness.
+    pub fn is_priority_peer(&self, peer: &PeerNetworkId) -> bool {
+        peer.network_id().is_validator_network()
     }
 
     /// Returns the high-priority peer that was last polled and contains the oldest data
@@ -302,13 +309,6 @@ pub(crate) fn calculate_optimal_chunk_sizes(
         transaction_chunk_size,
         transaction_output_chunk_size,
     }
-}
-
-/// Returns true iff the given peer is high-priority.
-///
-/// TODO(joshlind): make this less hacky using network topological awareness.
-fn is_priority_peer(peer: &PeerNetworkId) -> bool {
-    peer.network_id().is_validator_network()
 }
 
 /// Calculates the median of the given set of values (if it exists)

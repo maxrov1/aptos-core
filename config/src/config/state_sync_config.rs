@@ -98,7 +98,7 @@ impl Default for StateSyncDriverConfig {
             max_connection_deadline_secs: 10,
             max_consecutive_stream_notifications: 10,
             max_pending_data_chunks: 100,
-            max_stream_wait_time_ms: 10_000,
+            max_stream_wait_time_ms: 5000,
         }
     }
 }
@@ -180,7 +180,7 @@ pub struct AptosDataClientConfig {
 impl Default for AptosDataClientConfig {
     fn default() -> Self {
         Self {
-            response_timeout_ms: 10000,
+            response_timeout_ms: 5000,
             summary_poll_interval_ms: 100,
         }
     }
